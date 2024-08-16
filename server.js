@@ -22,13 +22,30 @@ const PORT = process.env.PORT || 3000;3
 const rooms = new Map();
 const socketIds = new Set();
 
+const timeInterval = 1000 * 60 * 10; 
+
+function checkActivity() {
+  setInterval(() => {
+    rooms.forEach((room, roomCode) => {
+      if (Date.now() - room.lastActivity > timeInterval) {
+        socketIds.delete(room.players[0].id);
+        socketIds.delete(room.players[1].id);
+        rooms.delete(roomCode); 
+        io.to(roomCode).emit("OpponentLeft", { ended: true});
+      }
+    });
+  }, timeInterval);
+}
+
+
+checkActivity();
 // Create Room
 const createRoom = (resolve) => {
   let newRoomCode = generateRoomCode();
   while (rooms.has(newRoomCode)) {
     newRoomCode = generateRoomCode();
   }
-  rooms.set(newRoomCode, { roodCode: newRoomCode, players: [], board: null });
+  rooms.set(newRoomCode, { roodCode: newRoomCode, players: [], board: null, lastActivity : Date.now() });
   resolve(newRoomCode);
 };
 
@@ -137,7 +154,7 @@ function updateData(roomCode, event) {
   });
   let gameSet = room.board.gameSet;
   io.to(roomCode).emit(`${event}`, { gameSet: Array.from(gameSet) });
-  console.log(rooms);
+  rooms.get(roomCode).lastActivity = Date.now();
 }
 
 // Socket Connection
