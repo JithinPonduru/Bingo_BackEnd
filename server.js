@@ -144,14 +144,19 @@ const checkWinner = (roomCode) => {
 function updateData(roomCode, event) {
   let room = rooms.get(roomCode);
   let turn = room.board.turn;
-  io.to(room.players[0].id).emit("PlayerData", {
-    turn: turn === 0,
-    arrangement: Object.fromEntries(room.players[0].pMap),
-  });
-  io.to(room.players[1].id).emit("PlayerData", {
-    turn: turn === 1,
-    arrangement: Object.fromEntries(room.players[1].pMap),
-  });
+  let playerData1 = {
+    turn : turn === 0
+  }
+  let playerData2 = {
+    turn : turn === 1
+  }
+
+  if(event === "GameStart") {
+    playerData1.arrangement = Object.fromEntries(room.players[0].pMap);
+    playerData2.arrangement = Object.fromEntries(room.players[1].pMap);
+  }
+  io.to(room.players[0].id).emit("PlayerData", playerData1);
+  io.to(room.players[1].id).emit("PlayerData", playerData2);
   let gameSet = room.board.gameSet;
   io.to(roomCode).emit(`${event}`, { gameSet: Array.from(gameSet) });
   rooms.get(roomCode).lastActivity = Date.now();
@@ -212,7 +217,7 @@ io.on("connection", (socket) => {
     try {
       let room = rooms.get(roomCode);
       room.board.mark(number);
-      let winner = checkWinner(roomCode);
+      let winner = checkWinner(roomCode); 
       if (winner === -1) {
         room.board.toggleTurn();
         updateData(roomCode,"Update");
