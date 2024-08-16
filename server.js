@@ -58,7 +58,6 @@ const getCount = (gameSet, pMap) => {
   let count = 0;
   let board =  Array.from({ length: 5 }, () => Array(5).fill(0));
   for (let [key, value] of pMap.entries()) {
-    console.log(key, value);
     board[value.x][value.y] = key;
   }
   for (let i = 0; i < 5; i++) {
@@ -121,11 +120,11 @@ const checkWinner = (roomCode) => {
 function updateData(roomCode, event) {
   let room = rooms.get(roomCode);
   let turn = room.board.turn;
-  io.to(room.players[0].id).emit("GetTurn", {
+  io.to(room.players[0].id).emit("PlayerData", {
     turn: turn === 0,
     arrangement: Object.fromEntries(room.players[0].pMap),
   });
-  io.to(room.players[1].id).emit("GetTurn", {
+  io.to(room.players[1].id).emit("PlayerData", {
     turn: turn === 1,
     arrangement: Object.fromEntries(room.players[1].pMap),
   });
