@@ -137,6 +137,7 @@ function updateData(roomCode, event) {
   });
   let gameSet = room.board.gameSet;
   io.to(roomCode).emit(`${event}`, { gameSet: Array.from(gameSet) });
+  console.log(rooms);
 }
 
 // Socket Connection
@@ -210,17 +211,20 @@ io.on("connection", (socket) => {
   });
 
 
-  socket.on("Disconnect", () => {
-    for (let [roomCode, room] of rooms.entries()) {
-      for (let i = 0; i < room.players.length; i++) {
-        if (room.players[i].id === socket.id) {
-          io.to(roomCode).emit("OpponentLeft", { ended: true });
-          rooms.delete(roomCode);
-          socketIds.delete(socket.id);
-        }
-      }
+  socket.on("Disconnect", ({roomCode}) => {
+    console.log("Dis")
+    if (rooms.has(roomCode) === false) {
+      socket.emit("Error", "Room does not exist");
+      return;
     }
+    if(rooms.get(roomCode).players.length === 1) {
+      io.to(roomCode).emit("OpponentLeft", { ended: true });
+    }
+    rooms.delete(roomCode);
+    socketIds.delete(socket.id);
+    return;
   });
+
 });
 
 app.get("/", (req, res) => {
