@@ -7,12 +7,10 @@ class Board{
 
     mark = (number) => {
         if(this.gameSet.has(number)){
-            return false;
+            throw new Error("Number already marked");
         }
         this.gameSet.add(number);
-        return true;
     }
-
 
     toggleTurn = () => {
         this.turn = 1 - this.turn;

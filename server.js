@@ -1,77 +1,66 @@
 const Board = require("./utilities/Board");
 const Player = require("./utilities/Player");
-const {
-  generateRoomCode,
-  getRandomArrangement,
-  getRandomFirst,
-} = require("./utilities/Others");
+const { generateRoomCode, getRandomArrangement, getRandomFirst } = require("./utilities/Others");
 const express = require("express");
 const cors = require("cors");
 const http = require("http");
 const socketio = require("socket.io");
 
 const app = express();
-const PORT = process.env.PORT || 3000;
-
+app.use(cors());
 const server = http.createServer(app);
 const io = socketio(server);
-
-app.use(cors());
+const PORT = process.env.PORT || 3000;3
 
 const rooms = new Map();
+const socketIds = new Set();
 
 // Create Room
-
 const createRoom = (resolve) => {
   let newRoomCode = generateRoomCode();
   while (rooms.has(newRoomCode)) {
     newRoomCode = generateRoomCode();
   }
-
   rooms.set(newRoomCode, { roodCode: newRoomCode, players: [], board: null });
   resolve(newRoomCode);
 };
 
 // Join Room
-
 const joinRoom = (player, roomCode) => {
   rooms.get(roomCode).players.push(player);
 };
 
-// Kick
-
+// Kick Player
 const kickPlayer = (roomCode) => {
   rooms.get(roomCode).players.pop();
 };
 
 // Get Player Count
-
 const getPlayerCount = (roomCode) => {
   return rooms.get(roomCode).players.length;
 };
 
-// Giving board to a room
-
+// Give board to a room
 const giveBoard = (roomCode) => {
   rooms.get(roomCode).board = new Board();
 };
 
 // Give Arrangement
-
 const giveArrangements = (roomCode) => {
   rooms.get(roomCode).players[0].pMap = getRandomArrangement();
+  console.log(rooms.get(roomCode).players[0].pMap);
   rooms.get(roomCode).players[1].pMap = getRandomArrangement();
+  console.log(rooms.get(roomCode).players[1].pMap);
 };
 
-// Check Winner
-
+// Get Lines Count
 const getCount = (gameSet, pMap) => {
   let count = 0;
-  let board = new Array(5).map(() => new Array(5).fill(0));
-  for (let [key, value] of pMap) {
+  let board =  Array.from({ length: 5 }, () => Array(5).fill(0));
+  for (let [key, value] of pMap.entries()) {
+    console.log(key, value);
     board[value.x][value.y] = key;
   }
-  // return number of rows + columns + center diagonals in which all the numbers are marked
   for (let i = 0; i < 5; i++) {
     let row = true;
     let col = true;
@@ -90,7 +79,6 @@ const getCount = (gameSet, pMap) => {
       count++;
     }
   }
-  // now check the two diagonals
   let diag1 = true;
   let diag2 = true;
   for (let i = 0; i < 5; i++) {
@@ -111,15 +99,13 @@ const getCount = (gameSet, pMap) => {
   return count;
 };
 
+// Check Winner
 const checkWinner = (roomCode) => {
   let gameSet = rooms.get(roomCode).board.gameSet;
-
   let p1Map = rooms.get(roomCode).players[0].pMap;
   let p2Map = rooms.get(roomCode).players[1].pMap;
-
   let p1Count = getCount(gameSet, p1Map);
   let p2Count = getCount(gameSet, p2Map);
-
   if (p1Count === 5 && p2Count === 5) {
     return 2;
   } else if (p1Count === 5) {
@@ -133,81 +119,98 @@ const checkWinner = (roomCode) => {
 
 // Update data
 function updateData(roomCode, event) {
-  let turn = rooms.get(roomCode).board.turn;
-  io.to(rooms[roomCode].players[0].id).emit("Your Turn", {
+  let room = rooms.get(roomCode);
+  let turn = room.board.turn;
+  io.to(room.players[0].id).emit("GetTurn", {
     turn: turn === 0,
-    arrangement: rooms.get(roomCode).players[0].pMap,
+    arrangement: Object.fromEntries(room.players[0].pMap),
   });
-
-  io.to(rooms[roomCode].players[1].id).emit("Your Turn", {
+  io.to(room.players[1].id).emit("GetTurn", {
     turn: turn === 1,
-    arrangement: rooms.get(roomCode).players[1].pMap,
+    arrangement: Object.fromEntries(room.players[1].pMap),
   });
-
-  let gameSet = rooms.get(roomCode).board.gameSet;
-  io.to(roomCode).emit(`${event}`, { gameSet });
+  let gameSet = room.board.gameSet;
+  io.to(roomCode).emit(`${event}`, { gameSet: Array.from(gameSet) });
 }
 
 // Socket Connection
-
 io.on("connection", (socket) => {
-  socket.on("CreateRoom", () => {
+
+  socket.on("GetRoomsCount", () => {
+    socket.emit("RoomsCount", rooms.size);
+  });
+
+  socket.on("ClearAllRooms", () => {
+    rooms.clear();
+  });
+  
+  socket.on("CreateRoom", ({playerName}) => {
+    if (socketIds.has(socket.id)) {
+      socket.emit("Error", "You are already in a room");
+      return;
+    }
     new Promise((resolve) => {
       createRoom(resolve);
     }).then((roomCode) => {
+      socket.join(roomCode);
+      socketIds.add(socket.id);
+      let player = new Player(playerName, roomCode, socket.id);
+      joinRoom(player, roomCode);
       socket.emit("RoomCode", roomCode);
     });
   });
 
-  socket.on("JoinRoom", (roomCode, playerName) => {
+  socket.on("JoinRoom", ({roomCode, playerName}) => {
     if (roomCode === "" || roomCode === null || roomCode === undefined) {
       socket.emit("Error", "Room Code is required");
     }
 
-    socket.join(roomCode);
-    let player = new Player(playerName, roomCode, socket.id);
-    joinRoom(player, roomCode);
+    let playerCount = getPlayerCount(roomCode);
 
-    if (getPlayerCount(roomCode) === 1) {
-      socket.emit("Waiting", "Waiting for another player to join");
-    }
-
-    if (getPlayerCount(roomCode) === 2) {
+    if (playerCount >= 2) {
+      socket.emit("Error", "Room is Full");
+    } else {
+      socket.join(roomCode);
+      socketIds.add(socket.id);
+      let player = new Player(playerName, roomCode, socket.id);
+      joinRoom(player, roomCode);
       giveBoard(roomCode);
       giveArrangements(roomCode);
-
-      // Emitting to both players
-
       updateData(roomCode,"GameStart");
     }
+  });
 
-    if (getPlayerCount(roomCode) > 2) {
-      socket.leave(roomCode);
-      kickPlayer(roomCode);
-      socket.emit("Error", "Room is Full");
+  socket.on("Mark", ({roomCode, number}) => {
+    if(roomCode === null || roomCode === "" || rooms.has(roomCode) === false) {
+      socket.emit("Error", "Room does not exist");
+      return;
+    }
+    try {
+      let room = rooms.get(roomCode);
+      room.board.mark(number);
+      let winner = checkWinner(roomCode);
+      if (winner === -1) {
+        room.board.toggleTurn();
+        updateData(roomCode,"Update");
+      } else if (winner === 2) {
+        io.to(roomCode).emit("Draw", {ended: true});
+      } else {
+        io.to(roomCode).emit("Winner", { winner: room.players[winner].name, id : socket.id, ended: true });
+      }
+    } catch (error) {
+      socket.emit("Error", error.message);
+      return;
     }
   });
 
-  socket.on("mark", (roomCode, number) => {
-    rooms.get(roomCode).board.mark(number);
-    let winner = checkWinner(roomCode);
-    if (winner === -1) {
-      rooms.get(roomCode).board.toggleTurn();
-      updateData(roomCode,"Update");
-    } else if (winner === 2) {
-      io.to(roomCode).emit("Draw", {ended: true});
-    } else {
-      io.to(roomCode).emit("Winner", { winner: rooms[roomCode].players[winner].name,id : socket.id, ended: true });
-    }
-  });
 
-
-  socket.on("disconnect", () => {
-    for (let [roomCode, room] of rooms) {
+  socket.on("Disconnect", () => {
+    for (let [roomCode, room] of rooms.entries()) {
       for (let i = 0; i < room.players.length; i++) {
         if (room.players[i].id === socket.id) {
-          io.to(roomCode).emit("Opponent Left", { ended: true });
+          io.to(roomCode).emit("OpponentLeft", { ended: true });
           rooms.delete(roomCode);
+          socketIds.delete(socket.id);
         }
       }
     }

@@ -1,8 +1,8 @@
 const generateRoomCode = () => {
     let roomCode = "";
-    let chars = "0123456789abcdefghijklmnopqrstuvwxyz@#$%^&*()_+=?/><[]{}|";
-    for(let i = 0 ; i < 9 ; i++){
-        roomCode += chars[Math.floor(Math.random() * chars.length())];
+    let chars = "0123456789abcdefghijklmnopqrstuvwxyz@#$";
+    for(let i = 0 ; i < 16 ; i++){
+        roomCode += chars[Math.floor(Math.random() * chars.length)];
     }
     return roomCode;
 }
