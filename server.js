@@ -9,7 +9,14 @@ const socketio = require("socket.io");
 const app = express();
 app.use(cors());
 const server = http.createServer(app);
-const io = socketio(server);
+const io = socketio(server, {
+  cors: {
+    origin: "*", // Allow all origins
+    methods: ["GET", "POST"],
+    allowedHeaders: ["my-custom-header"],
+    credentials: true
+  }
+});
 const PORT = process.env.PORT || 3000;3
 
 const rooms = new Map();
