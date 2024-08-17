@@ -28,25 +28,24 @@ function checkActivity() {
   setInterval(() => {
     rooms.forEach((room, roomCode) => {
       if (Date.now() - room.lastActivity > timeInterval) {
-        socketIds.delete(room.players[0].id);
-        socketIds.delete(room.players[1].id);
-        rooms.delete(roomCode); 
-        io.to(roomCode).emit("OpponentLeft", { ended: true});
+        room.players.forEach(player => socketIds.delete(player.id));
+        rooms.delete(roomCode);
+        io.to(roomCode).emit("OpponentLeft", { ended: true });
       }
     });
   }, timeInterval);
 }
 
-
 checkActivity();
+
 // Create Room
-const createRoom = (resolve) => {
+const createRoom = () => {
   let newRoomCode = generateRoomCode();
   while (rooms.has(newRoomCode)) {
     newRoomCode = generateRoomCode();
   }
-  rooms.set(newRoomCode, { roodCode: newRoomCode, players: [], board: null, lastActivity : Date.now() });
-  resolve(newRoomCode);
+  rooms.set(newRoomCode, { roomCode: newRoomCode, players: [], board: null, lastActivity: Date.now() });
+  return newRoomCode;
 };
 
 // Join Room
@@ -72,15 +71,13 @@ const giveBoard = (roomCode) => {
 // Give Arrangement
 const giveArrangements = (roomCode) => {
   rooms.get(roomCode).players[0].pMap = getRandomArrangement();
-  console.log(rooms.get(roomCode).players[0].pMap);
   rooms.get(roomCode).players[1].pMap = getRandomArrangement();
-  console.log(rooms.get(roomCode).players[1].pMap);
 };
 
 // Get Lines Count
 const getCount = (gameSet, pMap) => {
   let count = 0;
-  let board =  Array.from({ length: 5 }, () => Array(5).fill(0));
+  let board = Array.from({ length: 5 }, () => Array(5).fill(0));
   for (let [key, value] of pMap.entries()) {
     board[value.x][value.y] = key;
   }
@@ -95,40 +92,28 @@ const getCount = (gameSet, pMap) => {
         col = false;
       }
     }
-    if (row) {
-      count++;
-    }
-    if (col) {
-      count++;
-    }
+    if (row) count++;
+    if (col) count++;
   }
   let diag1 = true;
   let diag2 = true;
   for (let i = 0; i < 5; i++) {
-    if (!gameSet.has(board[i][i])) {
-      diag1 = false;
-    }
-    if (!gameSet.has(board[i][4 - i])) {
-      diag2 = false;
-    }
+    if (!gameSet.has(board[i][i])) diag1 = false;
+    if (!gameSet.has(board[i][4 - i])) diag2 = false;
   }
-  if (diag1) {
-    count++;
-  }
-  if (diag2) {
-    count++;
-  }
+  if (diag1) count++;
+  if (diag2) count++;
 
   return count;
 };
 
 // Check Winner
 const checkWinner = (roomCode) => {
-  let gameSet = rooms.get(roomCode).board.gameSet;
-  let p1Map = rooms.get(roomCode).players[0].pMap;
-  let p2Map = rooms.get(roomCode).players[1].pMap;
-  let p1Count = getCount(gameSet, p1Map);
-  let p2Count = getCount(gameSet, p2Map);
+  const gameSet = rooms.get(roomCode).board.gameSet;
+  const p1Map = rooms.get(roomCode).players[0].pMap;
+  const p2Map = rooms.get(roomCode).players[1].pMap;
+  const p1Count = getCount(gameSet, p1Map);
+  const p2Count = getCount(gameSet, p2Map);
   if (p1Count === 5 && p2Count === 5) {
     return 2;
   } else if (p1Count === 5) {
@@ -142,29 +127,25 @@ const checkWinner = (roomCode) => {
 
 // Update data
 function updateData(roomCode, event) {
-  let room = rooms.get(roomCode);
-  let turn = room.board.turn;
-  let playerData1 = {
-    turn : turn === 0
-  }
-  let playerData2 = {
-    turn : turn === 1
-  }
+  const room = rooms.get(roomCode);
+  const turn = room.board.turn;
+  const playerData1 = { turn: turn === 0 };
+  const playerData2 = { turn: turn === 1 };
 
-  if(event === "GameStart") {
+  if (event === "GameStart") {
     playerData1.arrangement = Object.fromEntries(room.players[0].pMap);
     playerData2.arrangement = Object.fromEntries(room.players[1].pMap);
   }
+
   io.to(room.players[0].id).emit("PlayerData", playerData1);
   io.to(room.players[1].id).emit("PlayerData", playerData2);
-  let gameSet = room.board.gameSet;
+  const gameSet = room.board.gameSet;
   io.to(roomCode).emit(`${event}`, { gameSet: Array.from(gameSet) });
   rooms.get(roomCode).lastActivity = Date.now();
 }
 
 // Socket Connection
 io.on("connection", (socket) => {
-
   socket.on("GetRoomsCount", () => {
     socket.emit("RoomsCount", rooms.size);
   });
@@ -172,81 +153,84 @@ io.on("connection", (socket) => {
   socket.on("ClearAllRooms", () => {
     rooms.clear();
   });
-  
-  socket.on("CreateRoom", ({playerName}) => {
+
+  socket.on("CreateRoom", async ({ playerName }) => {
     if (socketIds.has(socket.id)) {
       socket.emit("Error", "You are already in a room");
       return;
     }
-    new Promise((resolve) => {
-      createRoom(resolve);
-    }).then((roomCode) => {
-      socket.join(roomCode);
-      socketIds.add(socket.id);
-      let player = new Player(playerName, roomCode, socket.id);
-      joinRoom(player, roomCode);
-      socket.emit("RoomCode", roomCode);
-    });
+    const roomCode = createRoom();
+    socket.join(roomCode);
+    socketIds.add(socket.id);
+    const player = new Player(playerName, roomCode, socket.id);
+    joinRoom(player, roomCode);
+    socket.emit("RoomCode", roomCode);
   });
 
-  socket.on("JoinRoom", ({roomCode, playerName}) => {
-    if (roomCode === "" || roomCode === null || roomCode === undefined) {
+  socket.on("JoinRoom", ({ roomCode, playerName }) => {
+    if (!roomCode) {
       socket.emit("Error", "Room Code is required");
+      return;
     }
 
-    let playerCount = getPlayerCount(roomCode);
-
-    if (playerCount >= 2) {
-      socket.emit("Error", "Room is Full");
-    } else {
-      socket.join(roomCode);
-      socketIds.add(socket.id);
-      let player = new Player(playerName, roomCode, socket.id);
-      joinRoom(player, roomCode);
-      giveBoard(roomCode);
-      giveArrangements(roomCode);
-      updateData(roomCode,"GameStart");
-    }
-  });
-
-  socket.on("Mark", ({roomCode, number}) => {
-    if(roomCode === null || roomCode === "" || rooms.has(roomCode) === false) {
+    if (!rooms.has(roomCode)) {
       socket.emit("Error", "Room does not exist");
       return;
     }
+
+    const playerCount = getPlayerCount(roomCode);
+    if (playerCount >= 2) {
+      socket.emit("Error", "Room is Full");
+      return;
+    }
+
+    socket.join(roomCode);
+    socketIds.add(socket.id);
+    const player = new Player(playerName, roomCode, socket.id);
+    joinRoom(player, roomCode);
+    giveBoard(roomCode);
+    giveArrangements(roomCode);
+    updateData(roomCode, "GameStart");
+  });
+
+  socket.on("Mark", ({ roomCode, number }) => {
+    if (!roomCode || !rooms.has(roomCode)) {
+      socket.emit("Error", "Room does not exist");
+      return;
+    }
+
     try {
-      let room = rooms.get(roomCode);
+      const room = rooms.get(roomCode);
       room.board.mark(number);
-      let winner = checkWinner(roomCode); 
+      const winner = checkWinner(roomCode);
       if (winner === -1) {
         room.board.toggleTurn();
-        updateData(roomCode,"Update");
+        updateData(roomCode, "Update");
       } else if (winner === 2) {
-        io.to(roomCode).emit("Draw", {ended: true});
+        io.to(roomCode).emit("Draw", { ended: true });
       } else {
-        io.to(roomCode).emit("Winner", { winner: room.players[winner].name, id : socket.id, ended: true });
+        io.to(roomCode).emit("Winner", { winner: room.players[winner].name, id: socket.id, ended: true });
       }
     } catch (error) {
       socket.emit("Error", error.message);
-      return;
     }
   });
 
-
-  socket.on("Disconnect", ({roomCode}) => {
-    console.log("Dis")
-    if (rooms.has(roomCode) === false) {
-      socket.emit("Error", "Room does not exist");
-      return;
+  socket.on("disconnect", () => {
+    for (const [roomCode, room] of rooms) {
+      const playerIndex = room.players.findIndex(player => player.id === socket.id);
+      if (playerIndex !== -1) {
+        room.players.splice(playerIndex, 1);
+        if (room.players.length === 0) {
+          rooms.delete(roomCode);
+        } else {
+          io.to(roomCode).emit("OpponentLeft", { ended: true });
+        }
+        break;
+      }
     }
-    if(rooms.get(roomCode).players.length === 1) {
-      io.to(roomCode).emit("OpponentLeft", { ended: true });
-    }
-    rooms.delete(roomCode);
     socketIds.delete(socket.id);
-    return;
   });
-
 });
 
 app.get("/", (req, res) => {
