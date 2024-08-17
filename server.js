@@ -17,7 +17,7 @@ const io = socketio(server, {
     credentials: true
   }
 });
-const PORT = process.env.PORT || 3000;3
+const PORT = process.env.PORT || 3000;
 
 const rooms = new Map();
 const socketIds = new Set();
