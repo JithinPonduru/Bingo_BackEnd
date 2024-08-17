@@ -1,10 +1,14 @@
 const generateRoomCode = () => {
     let roomCode = "";
-    let chars = "0123456789abcdefghijklmnopqrstuvwxyz@#$";
-    for(let i = 0 ; i < 16 ; i++){
-        roomCode += chars[Math.floor(Math.random() * chars.length)];
+    for(let i = 0 ; i < 6 ; i++){
+        roomCode += generateRandomChar();
     }
     return roomCode;
+}
+
+const generateRandomChar = () => {
+    let chars = "0123456789abcdefghijklmnopqrstuvwxyz@#$";
+    return chars[Math.floor(Math.random() * chars.length)];
 }
 
 const getRandomArrangement = () => {
@@ -30,4 +34,12 @@ const getRandomFirst = () => {
     return (Math.floor(Math.random() * 2));
 }
 
-module.exports = {generateRoomCode,getRandomArrangement,getRandomFirst};
+const generateId = () => {
+    let id = "";
+    for(let i = 0 ; i < 10; i++){
+        id += generateRandomChar();
+    }
+    return id;
+}
+
+module.exports = {generateRoomCode, generateId, getRandomArrangement, getRandomFirst};
