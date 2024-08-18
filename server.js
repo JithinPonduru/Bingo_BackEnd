@@ -189,7 +189,6 @@ io.on("connection", (socket) => {
     } else if (winner === 2) {
       io.to(roomCode).emit("Draw", { draw: true, ended: true });
     } else {
-      console.log("Winner is: ", playerIds[winner]);
       io.to(roomCode).emit("Winner", { 
         winnerName: players.get(playerIds[winner]).name, 
         winnerId: playerIds[winner], 
