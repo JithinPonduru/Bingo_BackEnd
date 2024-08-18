@@ -19,7 +19,7 @@ const io = socketio(server, {
 const PORT = process.env.PORT || 3000;
 
 const rooms = new Map();
-const playerIds = new Set();
+const players = new Map();
 
 const timeInterval = 1000 * 60 * 10; 
 
@@ -41,27 +41,19 @@ checkActivity();
 const createRoom = () => {
   let newRoomCode = generateRoomCode();
   while (rooms.has(newRoomCode)) { newRoomCode = generateRoomCode(); }
-  rooms.set(newRoomCode, { roomCode: newRoomCode, players: [], board: null, lastActivity: Date.now() });
+  rooms.set(newRoomCode, { roomCode: newRoomCode, playerIds: [], board: null, lastActivity: Date.now() });
   return newRoomCode;
 };
 
-// Create Player
-const createPlayer = (roomCode, playerName) => {
-  const newPlayerId = generateId();
-  while (playerIds.has(newPlayerId)) { newPlayerId = generateId(); }
-  playerIds.add(newPlayerId);
-  return new Player(playerName, roomCode, newPlayerId);
-}
-
 // Join Room
-const joinRoom = (roomCode, player) => { rooms.get(roomCode).players.push(player); };
+const joinRoom = (roomCode, playerId) => { rooms.get(roomCode).playerIds.push(playerId); };
 
 // Kick Player
-const kickPlayer = (roomCode) => { rooms.get(roomCode).players.pop(); };
+const kickPlayer = (roomCode) => { rooms.get(roomCode).playerIds.pop(); };
 
 // Get Player Count
 const getPlayerCount = (roomCode) => {
-  return rooms.get(roomCode).players.length;
+  return rooms.get(roomCode).playerIds.length;
 };
 
 // Give board to a room
@@ -71,8 +63,9 @@ const giveBoard = (roomCode) => {
 
 // Give Arrangement
 const giveArrangements = (roomCode) => {
-  rooms.get(roomCode).players[0].pMap = getRandomArrangement();
-  rooms.get(roomCode).players[1].pMap = getRandomArrangement();
+  const playerIds = rooms.get(roomCode).playerIds;
+  players.get(playerIds[0]).pMap = getRandomArrangement();
+  players.get(playerIds[1]).pMap = getRandomArrangement();
 };
 
 // Get Lines Count
@@ -103,9 +96,11 @@ const getCount = (gameSet, pMap) => {
 
 // Check Winner
 const checkWinner = (roomCode) => {
-  const gameSet = rooms.get(roomCode).board.gameSet;
-  const p1Map = rooms.get(roomCode).players[0].pMap;
-  const p2Map = rooms.get(roomCode).players[1].pMap;
+  const room = rooms.get(roomCode);
+  const gameSet = room.board.gameSet;
+  const playerIds = room.playerIds;
+  const p1Map = players.get(playerIds[0]).pMap;
+  const p2Map = players.get(playerIds[1]).pMap;
   const p1Count = getCount(gameSet, p1Map);
   const p2Count = getCount(gameSet, p2Map);
   if (p1Count === 5 && p2Count === 5) { return 2;
@@ -117,19 +112,18 @@ const checkWinner = (roomCode) => {
 // Update data
 function updateData(roomCode, event) {
   const room = rooms.get(roomCode);
+  const playerIds = room.playerIds;
   const turn = room.board.turn;
-  const playerData1 = { turn: turn === 0 };
-  const playerData2 = { turn: turn === 1 };
-
+  const player1Data = { turn: turn == 0 };
+  const player2Data = { turn: turn == 1 };
   if (event === "GameStart") {
-    playerData1.arrangement = Object.fromEntries(room.players[0].pMap);
-    playerData2.arrangement = Object.fromEntries(room.players[1].pMap);
-    playerData1.id = room.players[0].id;
-    playerData2.id = room.players[1].id;
+    player1Data.arrangement = Object.fromEntries(players.get(playerIds[0]).pMap);
+    player2Data.arrangement = Object.fromEntries(players.get(playerIds[1]).pMap);
+    player1Data.playerId = playerIds[0];
+    player2Data.playerId = playerIds[1];
   }
-
-  io.to(room.players[0].id).emit("PlayerData", playerData1);
-  io.to(room.players[1].id).emit("PlayerData", playerData2);
+  io.to(players.get(playerIds[0]).socketId).emit("PlayerData", player1Data);
+  io.to(players.get(playerIds[1]).socketId).emit("PlayerData", player2Data);
   const gameSet = room.board.gameSet;
   io.to(roomCode).emit(`${event}`, { gameSet: Array.from(gameSet) });
   rooms.get(roomCode).lastActivity = Date.now();
@@ -141,23 +135,29 @@ io.on("connection", (socket) => {
 
   socket.on("ClearAllRooms", () => { rooms.clear(); });
 
+  socket.on("RegisterNewSocketId", ({ roomCode, playerId }) => {
+    if (!players.has(playerId)) { socket.emit("Error", "Player does not exist"); return; }
+    players.get(playerId).socketId = socket.id;
+    socket.join(roomCode)
+  })
+
   socket.on("CreateRoom", async ({ playerName }) => {
     const roomCode = createRoom(); socket.join(roomCode);
-    const player = createPlayer(roomCode, playerName);
-    joinRoom(roomCode, player);
+    const player = new Player(playerName, roomCode, socket.id);
+    const playerId = generateId(); players.set(playerId, player);
+    joinRoom(roomCode, playerId);
     socket.emit("RoomCode", roomCode);
   });
 
   socket.on("JoinRoom", ({ roomCode, playerName }) => {
     if (!roomCode) { socket.emit("Error", "Room Code is required"); return; }
     if (!rooms.has(roomCode)) { socket.emit("Error", "Room does not exist"); return; }
-
     const playerCount = getPlayerCount(roomCode);
     if (playerCount >= 2) { socket.emit("Error", "Room is Full"); return; }
-
     socket.join(roomCode);
-    const player = createPlayer(roomCode, playerName);
-    joinRoom(roomCode, player); giveBoard(roomCode); giveArrangements(roomCode);
+    const player = new Player(playerName, roomCode, socket.id);
+    const playerId = generateId(); players.set(playerId, player);
+    joinRoom(roomCode, playerId); giveBoard(roomCode); giveArrangements(roomCode);
     updateData(roomCode, "GameStart");
   });
 
@@ -166,9 +166,8 @@ io.on("connection", (socket) => {
       socket.emit("Error", "Room does not exist");
       return;
     }
-
-    try {
       const room = rooms.get(roomCode);
+      const playerIds = room.playerIds;
       room.board.mark(number);
       const winner = checkWinner(roomCode);
       if (winner === -1) {
@@ -177,29 +176,26 @@ io.on("connection", (socket) => {
       } else if (winner === 2) {
         io.to(roomCode).emit("Draw", { draw: true, ended: true });
       } else {
-        io.to(roomCode).emit("Winner", { winneName: room.players[winner].name, winnerId: playerIds, ended: true });
+        io.to(roomCode).emit("Winner", { winneName: players[playerIds[winner]].name, winnerId: playerIds[0], ended: true });
       }
-    } catch (error) {
-      socket.emit("Error", error.message);
-    }
   });
 
-  socket.on("disconnect", (playerId) => {
-    if(!playerIds.has(playerId)) { return; }
-    for (const [roomCode, room] of rooms) {
-      const playerIndex = room.players.findIndex(player => player.id === playerId);
-      if (playerIndex !== -1) {
-        room.players.splice(playerIndex, 1);
-        if (room.players.length === 0) {
-          rooms.delete(roomCode);
-        } else {
-          io.to(roomCode).emit("OpponentLeft", { ended: true });
-        }
-        break;
-      }
-    }
-    playerIds.delete(playerId);
-  });
+  // socket.on("Disconnect", ({playerId}) => {
+  //   if(!players.has(playerId)) { return; }
+  //   for (const [roomCode, room] of rooms) {
+  //     const playerIndex = room.players.findIndex(player => player.id === playerId);
+  //     if (playerIndex !== -1) {
+  //       room.players.splice(playerIndex, 1);
+  //       if (room.players.length === 0) {
+  //         rooms.delete(roomCode);
+  //       } else {
+  //         io.to(roomCode).emit("OpponentLeft", { ended: true });
+  //       }
+  //       break;
+  //     }
+  //   }
+  //   playerIds.delete(playerId);
+  // });
 });
 
 app.get("/", (req, res) => {
