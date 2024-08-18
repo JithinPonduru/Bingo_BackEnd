@@ -11,7 +11,7 @@ app.use(cors());
 const server = http.createServer(app);
 const io = socketio(server, {
   cors: {
-    origin: "*", 
+    origin: "*",
     methods: ["GET", "POST"],
     credentials: true
   }
@@ -21,13 +21,13 @@ const PORT = process.env.PORT || 3000;
 const rooms = new Map();
 const players = new Map();
 
-const timeInterval = 1000 * 60 * 10; 
+const timeInterval = 1000 * 60 * 10;
 
 function checkActivity() {
   setInterval(() => {
     rooms.forEach((room, roomCode) => {
       if (Date.now() - room.lastActivity > timeInterval) {
-        room.players.forEach(player => playerIds.delete(player.id));
+        room.playerIds.forEach(playerId => players.delete(playerId));
         rooms.delete(roomCode);
         io.to(roomCode).emit("OpponentLeft", { ended: true });
       }
@@ -103,9 +103,17 @@ const checkWinner = (roomCode) => {
   const p2Map = players.get(playerIds[1]).pMap;
   const p1Count = getCount(gameSet, p1Map);
   const p2Count = getCount(gameSet, p2Map);
-  if (p1Count === 5 && p2Count === 5) { return 2;
-  } else if (p1Count === 5) { return 0;
-  } else if (p2Count === 5) { return 1;
+  if (p1Count === 5 && p2Count === 5) {
+    console.log("Draw");
+    return 2;
+  } else if (p1Count === 5) {
+    console.log("Winner is: ", playerIds[0]);
+    console.log("Player 1 wins");
+    return 0;
+  } else if (p2Count === 5) {
+    console.log("Winner is: ", players[playerIds[1]]);
+    console.log("Player 2 wins");
+    return 1;
   } else { return -1; }
 };
 
@@ -138,13 +146,15 @@ io.on("connection", (socket) => {
   socket.on("RegisterNewSocketId", ({ roomCode, playerId }) => {
     if (!players.has(playerId)) { socket.emit("Error", "Player does not exist"); return; }
     players.get(playerId).socketId = socket.id;
-    socket.join(roomCode)
-  })
+    socket.join(roomCode);
+  });
 
   socket.on("CreateRoom", async ({ playerName }) => {
-    const roomCode = createRoom(); socket.join(roomCode);
+    const roomCode = createRoom();
+    socket.join(roomCode);
     const player = new Player(playerName, roomCode, socket.id);
-    const playerId = generateId(); players.set(playerId, player);
+    const playerId = generateId();
+    players.set(playerId, player);
     joinRoom(roomCode, playerId);
     socket.emit("RoomCode", roomCode);
   });
@@ -156,8 +166,11 @@ io.on("connection", (socket) => {
     if (playerCount >= 2) { socket.emit("Error", "Room is Full"); return; }
     socket.join(roomCode);
     const player = new Player(playerName, roomCode, socket.id);
-    const playerId = generateId(); players.set(playerId, player);
-    joinRoom(roomCode, playerId); giveBoard(roomCode); giveArrangements(roomCode);
+    const playerId = generateId();
+    players.set(playerId, player);
+    joinRoom(roomCode, playerId);
+    giveBoard(roomCode);
+    giveArrangements(roomCode);
     updateData(roomCode, "GameStart");
   });
 
@@ -166,27 +179,32 @@ io.on("connection", (socket) => {
       socket.emit("Error", "Room does not exist");
       return;
     }
-      const room = rooms.get(roomCode);
-      const playerIds = room.playerIds;
-      room.board.mark(number);
-      const winner = checkWinner(roomCode);
-      if (winner === -1) {
-        room.board.toggleTurn();
-        updateData(roomCode, "Update");
-      } else if (winner === 2) {
-        io.to(roomCode).emit("Draw", { draw: true, ended: true });
-      } else {
-        io.to(roomCode).emit("Winner", { winneName: players[playerIds[winner]].name, winnerId: playerIds[0], ended: true });
-      }
+    const room = rooms.get(roomCode);
+    const playerIds = room.playerIds;
+    room.board.mark(number);
+    const winner = checkWinner(roomCode);
+    if (winner === -1) {
+      room.board.toggleTurn();
+      updateData(roomCode, "Update");
+    } else if (winner === 2) {
+      io.to(roomCode).emit("Draw", { draw: true, ended: true });
+    } else {
+      console.log("Winner is: ", playerIds[winner]);
+      io.to(roomCode).emit("Winner", { 
+        winnerName: players.get(playerIds[winner]).name, 
+        winnerId: playerIds[winner], 
+        ended: true 
+      });
+    }
   });
 
-  // socket.on("Disconnect", ({playerId}) => {
-  //   if(!players.has(playerId)) { return; }
+  // socket.on("Disconnect", ({ playerId }) => {
+  //   if (!players.has(playerId)) { return; }
   //   for (const [roomCode, room] of rooms) {
-  //     const playerIndex = room.players.findIndex(player => player.id === playerId);
+  //     const playerIndex = room.playerIds.findIndex(id => id === playerId);
   //     if (playerIndex !== -1) {
-  //       room.players.splice(playerIndex, 1);
-  //       if (room.players.length === 0) {
+  //       room.playerIds.splice(playerIndex, 1);
+  //       if (room.playerIds.length === 0) {
   //         rooms.delete(roomCode);
   //       } else {
   //         io.to(roomCode).emit("OpponentLeft", { ended: true });
@@ -194,7 +212,7 @@ io.on("connection", (socket) => {
   //       break;
   //     }
   //   }
-  //   playerIds.delete(playerId);
+  //   players.delete(playerId);
   // });
 });
 
