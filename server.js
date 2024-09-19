@@ -103,14 +103,14 @@ const checkWinner = (roomCode) => {
   const p2Map = players.get(playerIds[1]).pMap;
   const p1Count = getCount(gameSet, p1Map);
   const p2Count = getCount(gameSet, p2Map);
-  if (p1Count === 5 && p2Count === 5) {
+  if (p1Count >= 5 && p2Count >= 5) {
     console.log("Draw");
     return 2;
-  } else if (p1Count === 5) {
+  } else if (p1Count >= 5) {
     console.log("Winner is: ", playerIds[0]);
     console.log("Player 1 wins");
     return 0;
-  } else if (p2Count === 5) {
+  } else if (p2Count >= 5) {
     console.log("Winner is: ", players[playerIds[1]]);
     console.log("Player 2 wins");
     return 1;
