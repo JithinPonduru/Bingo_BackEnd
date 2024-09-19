@@ -21,7 +21,7 @@ const PORT = process.env.PORT || 3000;
 const rooms = new Map();
 const players = new Map();
 
-const timeInterval = 1000 * 60 * 10;
+const timeInterval = 300000;
 
 function checkActivity() {
   setInterval(() => {
@@ -191,22 +191,13 @@ io.on("connection", (socket) => {
     }
   });
 
-  // socket.on("Disconnect", ({ playerId }) => {
-  //   if (!players.has(playerId)) { return; }
-  //   for (const [roomCode, room] of rooms) {
-  //     const playerIndex = room.playerIds.findIndex(id => id === playerId);
-  //     if (playerIndex !== -1) {
-  //       room.playerIds.splice(playerIndex, 1);
-  //       if (room.playerIds.length === 0) {
-  //         rooms.delete(roomCode);
-  //       } else {
-  //         io.to(roomCode).emit("OpponentLeft", { ended: true });
-  //       }
-  //       break;
-  //     }
-  //   }
-  //   players.delete(playerId);
-  // });
+  socket.on("Exit", ({ roomCode}) => {
+    if (!rooms.has(roomCode)) { return; }
+    const room = rooms.get(roomCode);
+    io.to(roomCode).emit("OpponentLeft", { ended: true });
+    room.playerIds.forEach(playerId => players.delete(playerId));
+    rooms.delete(roomCode);
+  })
 });
 
 app.get("/", (req, res) => {
