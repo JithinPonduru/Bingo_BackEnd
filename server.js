@@ -72,20 +72,26 @@ const giveArrangements = (roomCode) => {
 const getCount = (gameSet, pMap) => {
   let count = 0;
   let board = Array.from({ length: 5 }, () => Array(5).fill(0));
-  for (let [key, value] of pMap.entries()) { 
-    board[value.x][value.y] = key; 
-  }
-  let rowsCount = 0, colsCount = 0;
-  let diag1Count = 0, diag2Count = 0;
+  for (let [key, value] of pMap.entries()) { board[value.x][value.y] = key; }
   for (let i = 0; i < 5; i++) {
-    if (board[i].every(e => gameSet.has(e))) rowsCount++; 
-    if (board.map(row => row[i]).every(e => gameSet.has(e))) colsCount++; 
-    if (gameSet.has(board[i][i]))  diag1Count++;
-    if (gameSet.has(board[i][4 - i])) diag2Count++; 
+    let row = true;
+    let col = true;
+    for (let j = 0; j < 5; j++) {
+      if (!gameSet.has(board[i][j])) { row = false; }
+      if (!gameSet.has(board[j][i])) { col = false; }
+    }
+    if (row) count++;
+    if (col) count++;
   }
-  if (diag1Count === 5) { count++; }
-  if (diag2Count === 5) { count++; }
-  return rowsCount + colsCount + count;
+  let diag1 = true;
+  let diag2 = true;
+  for (let i = 0; i < 5; i++) {
+    if (!gameSet.has(board[i][i])) diag1 = false;
+    if (!gameSet.has(board[i][4 - i])) diag2 = false;
+  }
+  if (diag1) count++;
+  if (diag2) count++;
+  return count;
 };
 
 // Check Winner
